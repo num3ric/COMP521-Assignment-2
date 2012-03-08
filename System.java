@@ -182,23 +182,15 @@ public class System
 	/**
 	 * Determine if a body collides with a cannon (before hitting a mountain).
 	 * @param b Body to be tested for collision
+	 * @param cannon Body of the cannon potentially colliding
 	 * @throws GameException If there is a valid collision.
 	 * 		   (either "YOU WON!" or "YOU LOST!")
 	 */
-	private void cannonCollide(Body b) throws GameException {
-		float separation = b.separation(cannonCollision1);
-		float minSeparation = b.minSeparation(cannonCollision1);
-		if (!b.hasCollidedTerrain && b.human!=cannonCollision1.human && separation < minSeparation) {
-			if(cannonCollision1.human) {
-				throw new GameException("YOU LOST!");
-			} else {
-				throw new GameException("YOU WON!");
-			}
-		}
-		separation = b.separation(cannonCollision2);
-		minSeparation = b.minSeparation(cannonCollision2);
-		if (!b.hasCollidedTerrain && b.human!=cannonCollision2.human && separation < minSeparation) {
-			if(cannonCollision2.human) {
+	private void cannonCollide(Body b, Body cannon) throws GameException {
+		float separation = b.separation(cannon);
+		float minSeparation = b.minSeparation(cannon);
+		if (!b.hasCollidedTerrain && b.human!=cannon.human && separation < minSeparation) {
+			if(cannon.human) {
 				throw new GameException("YOU LOST!");
 			} else {
 				throw new GameException("YOU WON!");
@@ -227,8 +219,10 @@ public class System
 		PVector proj2 = new PVector();
 		for (int i = 0; i < len; i++) {
 			Body b1 = bodies.get(i);
-			if (useCannonCollision)
-				cannonCollide(b1);
+			if (useCannonCollision) {
+				cannonCollide(b1, cannonCollision1);
+				cannonCollide(b1, cannonCollision2);
+			}
 			for (int j = i + 1; j < len; j++) {
 				Body b2 = bodies.get(j);
 				//TODO: Should use distance squared for faster detection..
@@ -482,9 +476,9 @@ public class System
 	 */
 	private void postStep(int horizon)
 	{
-		for (int i = this.bodies.size()-1; i >= 0; --i) {
-			Body b = bodies.get(i);
-			if (!useBorderConstraint) {
+		if (!useBorderConstraint) {
+			for (int i = this.bodies.size()-1; i >= 0; --i) {
+				Body b = bodies.get(i);
 				if ( b.pos.x + b.rad < 0 || b.pos.x - b.rad > p5.width 
 						|| b.pos.y - b.rad > p5.height || b.pos.y - b.rad > horizon) {
 					bodies.remove(i);
