@@ -54,36 +54,47 @@ public class DustParticle
 	}
 	
 	/**
-	 * Post-step fix. Loop the particles around the edges.
+	 * Regroup the trail at the current position.
 	 */
-	void postStep() {
-		int border = 7;
-		if(pos.x < -border) {
-			pos.x = p5.width;
-			for(int i=sizeTrail-1; i>0; --i) {
-				trail[i] = pos.get();
-			}
-		} else if (pos.x > p5.width+border) {
-			pos.x = 0;
-			for(int i=sizeTrail-1; i>0; --i) {
-				trail[i] = pos.get();
-			}
+	private void regroupTrail()
+	{
+		for(int i=sizeTrail-1; i>0; --i) {
+			trail[i] = pos.get();
 		}
-		if(pos.y < -border) {
-			pos.y = p5.height;
-			for(int i=sizeTrail-1; i>0; --i) {
-				trail[i] = pos.get();
-			}
-		} else if (pos.y > p5.height+border) {
-			pos.y = 0;
-			for(int i=sizeTrail-1; i>0; --i) {
-				trail[i] = pos.get();
-			}
-		}
+	}
+	
+	/** 
+	 * Update the trail by updating the chain of last positions.
+	 */
+	private void updateTrail()
+	{
 		trail[0] = pos.get();
 		for(int i=sizeTrail-1; i>0; --i) {
 			trail[i] = trail[i-1].get();
 		}
+	}
+	
+	/**
+	 * Post-step fix. Loop the particles around the edges.
+	 */
+	void postStep()
+	{
+		int border = 7;
+		if(pos.x < -border) {
+			pos.x = p5.width;
+			regroupTrail();
+		} else if (pos.x > p5.width+border) {
+			pos.x = 0;
+			regroupTrail();
+		}
+		if(pos.y < -border) {
+			pos.y = p5.height;
+			regroupTrail();
+		} else if (pos.y > p5.height+border) {
+			pos.y = 0;
+			regroupTrail();
+		}
+		updateTrail();
 	}
 	
 	void draw() {

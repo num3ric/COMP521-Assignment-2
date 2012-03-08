@@ -305,17 +305,14 @@ public class System
 	private void terrainCollide(Terrain terrain, boolean preservingImpulse)
 	{
 		int len = bodies.size();
-		float separation, height;
 		/* Instead of using a quadtree (which would indeed be more efficient)
 		 * we simply use two terrain vertices index for more limiting
 		 * the search to 1/4 of the terrain length: in between these two vertices.
 		 * It is fast enough for this application.
 		 */
 		int low, high;
-		
-		PVector distv = new PVector();
-		PVector pathv;
-		PVector radv = new PVector();
+		PVector pathv = new PVector(), radv = new PVector();
+		PVector left = new PVector(), right= new PVector(), center= new PVector();
 		for(int nb=0; nb<2; ++nb) {
 			for (int i = 0; i < len; i++) {
 				boolean collided = false;
@@ -333,62 +330,91 @@ public class System
 					// the "full-stop" behavior which is required in this assignment
 					pathv.mult(1.22f);
 					for(int j=low; j<high; ++j) {
-						/* If the path intersects the terrain, apply a full
-						 * stop to the body motion.
-						 */
-						PVector intersection = intersect(PVector.add(b.pos, radv),
-								pathv,
-								terrain.heightmap[j],
-								PVector.sub(terrain.heightmap[j+1], terrain.heightmap[j]));
-						if(intersection != null) {
-							b.pos = PVector.sub(intersection, radv);
-							b.ppos.set(b.pos);
-							collided = true;
-							break;
-						}
+						collided = applyTerrainIntersectionConstraint(b, terrain, pathv, radv, j);
+						if (collided) break;
 					}
 				}
 				for(int j=low; j<high; ++j) {
-					separation = b.separation(terrain.heightmap[j]);
-					distv = PVector.sub(b.pos, terrain.heightmap[j]);
-					if ((separation < b.rad && separation != 0))
-					{
-						/* Hard constraint with a simple overlap between
-						 * the circle and the terrain vertices */
-						float conflictingLength = (b.rad - separation) / separation;
-						b.pos.add(PVector.mult(distv, conflictingLength));
-						if(collided) {
-							b.ppos.set(b.pos); //full-stop
-						}
-					}
-					/* Additional safety constrain based on the body's height.
-					 * Works fine without this but this additional constraint
-					 * might help if there are many projectiles stacked on each
-					 * other, or if the space between the terrain vertices is
-					 * very wide. The resulting behavior is not perfect however. */
-					if( j>0 && b.pos.x > terrain.heightmap[j-1].x && b.pos.x < terrain.heightmap[j].x) {
-						height = PApplet.lerp(terrain.heightmap[j-1].y,
-								terrain.heightmap[j].y,
-								(b.pos.x-terrain.heightmap[j-1].x)/(terrain.terrainSegmentWidth));
-						if(b.pos.y + b.rad > height) {
-							b.pos.y = height-b.rad;
-							b.ppos.y = b.pos.y;
-						}
-					} else if (b.pos.x > terrain.heightmap[j].x && b.pos.x < terrain.heightmap[j+1].x){
-						height = PApplet.lerp(terrain.heightmap[j].y,
-								terrain.heightmap[j+1].y,
-								(b.pos.x-terrain.heightmap[j].x)/(terrain.terrainSegmentWidth));
-						if(b.pos.y + b.rad > height) {
-							b.pos.add(PVector.mult(terrain.normals[j], (b.pos.y + b.rad - height)));
-							b.pos.y = height-b.rad;
-							b.ppos.y = b.pos.y;
-						}
+					applyTerrainOverlapConstraint( b, b.separation(terrain.heightmap[j]),
+							PVector.sub(b.pos, terrain.heightmap[j]), collided);
+					if (j > 0)
+						left.set(terrain.heightmap[j-1]);
+					center.set(terrain.heightmap[j]);
+					right.set(terrain.heightmap[j+1]);
+					if ( j>0 && b.pos.x > left.x && b.pos.x < center.x) {
+						applyTerrainVerticalConstraint(b, terrain, j, left, center);
+					} else if (b.pos.x > center.x && b.pos.x < right.x){
+						applyTerrainVerticalConstraint(b, terrain, j, center, right);
 					}
 				}
 				if(collided) {
 					b.hasCollidedTerrain = true;
 				}
 			}
+		}
+	}
+	
+	/**
+	 * Hard constraint applied if the path of the body (+ its radius) intersects the terrain.
+	 * @param b Body to be constrained.
+	 * @param terrain Terrain (heightmap)
+	 * @param pathv Path vector of the body
+	 * @param radv PVector in the direction of pathv with the magnitude of the body's radius
+	 * @param j Terrain segment index
+	 * @return True if there was an intersection (a collision resolution)
+	 */
+	private boolean applyTerrainIntersectionConstraint(Body b, Terrain terrain, PVector pathv, PVector radv, int j )
+	{
+		PVector intersection = intersect(PVector.add(b.pos, radv), pathv, terrain.heightmap[j],
+										 PVector.sub(terrain.heightmap[j+1], terrain.heightmap[j]));
+		if(intersection != null) {
+			b.pos = PVector.sub(intersection, radv);
+			b.ppos.set(b.pos);
+			return true;
+		}
+		return false;
+	}
+	
+	/**
+	 * Hard constraint with a simple overlap between
+	 * the circle and the terrain vertices.
+	 * @param b Body to be constrained.
+	 * @param separation Separation/distance between the body and the current terrain vertex
+	 * @param distv Distance vector between the body and the current terrain vertex
+	 * @param collided True if the body just had its first collision with the terrain
+	 */
+	private void applyTerrainOverlapConstraint(Body b, float separation, PVector distv, boolean collided) {
+		if ((separation < b.rad && separation != 0))
+		{
+			float conflictingLength = (b.rad - separation) / separation;
+			b.pos.add(PVector.mult(distv, conflictingLength));
+			if(collided) {
+				b.ppos.set(b.pos); //full-stop
+			}
+		}
+	}
+	
+	/**
+	 * Hard constraint. Limit the body to be above the current terrain segment.
+	 * 
+	 * (Additional safety constrain based on the body's height.
+	 * Works fine without this but this additional constraint
+	 * might help if there are many projectiles stacked on each
+	 * other, or if the space between the terrain vertices is
+	 * very wide. The resulting behavior is not perfect however.)
+	 * 
+	 * @param b Body to be constrained vertically
+	 * @param terrain Terrain (heightmap & normals)
+	 * @param terrainIndex Current terrain segment index
+	 * @param left Left segment terrain vertex
+	 * @param right Right segment terrain vertex
+	 */
+	private void applyTerrainVerticalConstraint(Body b, Terrain terrain, int terrainIndex, PVector left, PVector right) {
+		float height = PApplet.lerp(left.y, right.y, (b.pos.x-left.x)/(terrain.terrainSegmentWidth));
+		if(b.pos.y + b.rad > height) {
+//			b.pos.add(PVector.mult(terrain.normals[terrainIndex], (b.pos.y + b.rad - height)));
+			b.pos.y = height-b.rad;
+			b.ppos.y = b.pos.y;
 		}
 	}
 
